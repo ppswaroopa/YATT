@@ -1,3 +1,118 @@
+```gitignore
+# ============================================================
+# Python
+# ============================================================
+
+# Virtual environments
+.venv/
+venv/
+env/
 .yatt/
+
+# Python cache / bytecode
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+
+# ============================================================
+# C / C++ / CMake
+# ============================================================
+
+# CMake build directories
+build/
+cmake-build-*/
+deployment/build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+
+# Compilation artifacts
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Debug / profiling artifacts
+*.dSYM/
+*.gcda
+*.gcno
+*.prof
+*.profraw
+
+
+# ============================================================
+# Generated model artifacts
+# ============================================================
+
+# Exported deployment models
+*.bin
+
+# Generated / experimental model files
 *.pt
+*.pth
+*.ckpt
+
+# Training checkpoints
+checkpoints/
+
+
+# ============================================================
+# Generated logs / outputs
+# ============================================================
+
+*.log
+logs/
+outputs/
+
+# Benchmark results
+benchmarks/results/
+benchmark_results/
+
+
+# ============================================================
+# OS / editor files
+# ============================================================
+
+# Linux
+*~
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
+
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+```

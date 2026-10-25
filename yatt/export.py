@@ -35,6 +35,18 @@ def write_tensor_metadata(f, name, tensor):
     data_bytes = tensor.numel() * 4
     write_u64(f, data_bytes)
 
+def write_vocab(f, chars):
+    write_u32(f, len(chars))
+
+    for ch in chars:
+        encoded = ch.encode("utf-8")
+
+        if len(encoded) != 1:
+            raise ValueError(
+                f"Vocabulary character is not a single byte: {ch!r}"
+            )
+
+        f.write(encoded)
 
 def export_model():
     checkpoint = torch.load(
@@ -68,6 +80,7 @@ def export_model():
         write_u32(f, checkpoint["embed_dim"])
         write_u32(f, checkpoint["ffn_dim"])
         write_u32(f, checkpoint["num_heads"])
+        write_vocab(f, checkpoint["chars"])
         write_u32(f, len(tensors))
 
         # -------------------------
