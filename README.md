@@ -103,23 +103,21 @@ FFN dimension:      256
 Attention heads:    4
 
 Timing:
-  Model load:       4.563 ms
-  Tokenization:     0.002 ms
-  Generation:       1640.261 ms
-  Total:            1644.826 ms
+  Model load:       2.507 ms
+  Tokenization:     0.000 ms
+  Generation:       249.026 ms
+  Total:            251.534 ms
 
 Generation:
-  Avg latency:      16.403 ms/token
-  Throughput:       60.966 tokens/sec
+  Avg latency:      2.490 ms/token
+  Throughput:       401.564 tokens/sec
 
 Memory:
-  Process RSS:      4.125 MB
+  Process RSS:      3.875 MB
 
 Output:
-First Citizen: whevear yous to ben be the comend sour th nomarsouel, erast word autrin forne.
-
-Miten, yos heay.
-
-T
+First Citizen:
+Do and dome, Gowas why thoull the youche
+I theverowe, asconce thar herut wis noown now, dir nor wer
 ========================================
 ```
