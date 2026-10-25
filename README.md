@@ -49,7 +49,11 @@ FP32 NEON
 speedup: Zx
 ```
 
-### First ARMv7 Baseline
+## Build
+
+Follow build.md for build instructions
+
+### ARMv7 Performance Baseline
 
 ```text
 YATT ARMv7 Baseline
@@ -81,7 +85,7 @@ INT8:            No
 Threading:       No
 ```
 
-### First x86 Baseline
+### x86 Performance Baseline
 
 ```text
 ========================================
