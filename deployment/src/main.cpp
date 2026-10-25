@@ -4,7 +4,11 @@
 #include "generator.h"
 
 #include <iostream>
-
+#include <chrono>
+#include <filesystem>
+#include <iomanip>
+#include <fstream>
+#include <string>
 
 void print_model(const Model& model)
 {
@@ -31,218 +35,38 @@ void print_model(const Model& model)
 
     std::cout << "tensors:        "
               << model.tensors.size() << "\n\n";
+}
 
+size_t get_current_rss_kb()
+{
+    std::ifstream status_file("/proc/self/status");
 
-    for (const Tensor& tensor : model.tensors)
+    if (!status_file)
+        return 0;
+
+    std::string line;
+
+    while (std::getline(status_file, line))
     {
-        std::cout << tensor.name << " ";
-
-        std::cout << "[";
-
-        for (size_t i = 0;
-             i < tensor.shape.size();
-             ++i)
+        if (line.rfind("VmRSS:", 0) == 0)
         {
-            std::cout << tensor.shape[i];
+            size_t value_start = line.find_first_of("0123456789");
 
-            if (i + 1 < tensor.shape.size())
-            {
-                std::cout << ",";
-            }
+            if (value_start == std::string::npos)
+                return 0;
+
+            return std::stoul(line.substr(value_start));
         }
-
-        std::cout << "]";
-
-        std::cout << " "
-                  << tensor.data_bytes
-                  << " bytes\n";
     }
 
-    std::vector<uint32_t> token_ids = {
-    18, 47, 56, 57, 58, 1, 15, 47,
-    58, 47, 64, 43, 52, 10
-    };
-
-    std::vector<float> embeddings =
-        build_embeddings(model, token_ids);
-
-    const Tensor& ln1_weight =
-    find_tensor(model, "ln1.weight");
-
-    const Tensor& ln1_bias =
-        find_tensor(model, "ln1.bias");
-
-    std::vector<float> normalized =
-        layer_norm(
-            embeddings,
-            ln1_weight,
-            ln1_bias,
-            token_ids.size(),
-            model.embed_dim
-        );
-
-    std::cout << "\nLayerNorm output:\n";
-
-    for (size_t t = 0; t < token_ids.size(); ++t)
-    {
-        std::cout << "token " << token_ids[t] << ": ";
-
-        for (size_t d = 0; d < 5; ++d)
-        {
-            std::cout << normalized[t * model.embed_dim + d];
-
-            if (d + 1 < 5)
-                std::cout << ", ";
-        }
-
-        std::cout << "\n";
-    }
-    std::cout << "\nEmbedding output:\n";
-
-    for (size_t t = 0; t < token_ids.size(); ++t)
-    {
-        std::cout << "token " << token_ids[t] << ": ";
-
-        for (size_t d = 0; d < 5; ++d)
-        {
-            std::cout << embeddings[t * model.embed_dim + d];
-
-            if (d + 1 < 5)
-                std::cout << ", ";
-        }
-
-        std::cout << "\n";
-    }
-
-    const Tensor& q_weight =
-        find_tensor(model, "q_proj.weight");
-
-    const Tensor& q_bias =
-        find_tensor(model, "q_proj.bias");
-
-    const Tensor& k_weight =
-        find_tensor(model, "k_proj.weight");
-
-    const Tensor& k_bias =
-        find_tensor(model, "k_proj.bias");
-
-    const Tensor& v_weight =
-        find_tensor(model, "v_proj.weight");
-
-    const Tensor& v_bias =
-        find_tensor(model, "v_proj.bias");
-
-    std::vector<float> Q =
-        linear(
-            normalized,
-            q_weight,
-            q_bias,
-            token_ids.size(),
-            model.embed_dim,
-            model.embed_dim
-        );
-
-    std::vector<float> K =
-        linear(
-            normalized,
-            k_weight,
-            k_bias,
-            token_ids.size(),
-            model.embed_dim,
-            model.embed_dim
-        );
-
-    std::vector<float> V =
-        linear(
-            normalized,
-            v_weight,
-            v_bias,
-            token_ids.size(),
-            model.embed_dim,
-            model.embed_dim
-        );
-    std::cout << "\nQ output:\n";
-    
-    std::vector<float> attention_output =
-    attention(
-        model,
-        normalized,
-        Q,
-        K,
-        V
-    );
-
-    std::vector<float> block_output =
-    transformer_block_tail(
-        model,
-        embeddings,
-        attention_output
-    );
-
-    std::vector<float> logits =
-        output_logits(
-            model,
-            block_output
-        );
-
-    for (size_t d = 0; d < 5; ++d)
-        std::cout << Q[d] << " ";
-    std::cout << "\n";
-
-    std::cout << "\nK output:\n";
-
-    for (size_t d = 0; d < 5; ++d)
-        std::cout << K[d] << " ";
-    std::cout << "\n";
-
-    std::cout << "\nV output:\n";
-
-    for (size_t d = 0; d < 5; ++d)
-        std::cout << V[d] << " ";
-    std::cout << "\n";
-
-    std::cout << "\nAttention output:\n";
-
-    for (size_t t = 0; t < token_ids.size(); ++t)
-    {
-        std::cout << "token " << token_ids[t] << ": ";
-
-        for (size_t d = 0; d < 5; ++d)
-        {
-            std::cout
-                << attention_output[
-                    t * model.embed_dim + d
-                ];
-
-            if (d + 1 < 5)
-                std::cout << ", ";
-        }
-
-        std::cout << "\n";
-    }
-
-    std::cout << "\nFinal logits:\n";
-
-    size_t last_token_offset =
-        (token_ids.size() - 1) * model.vocab_size;
-
-    for (size_t i = 0; i < model.vocab_size; ++i)
-    {
-        std::cout
-            << i
-            << ": "
-            << logits[last_token_offset + i]
-            << "\n";
-    }
+    return 0;
 }
 
 int main(int argc, char** argv)
 {
     if (argc < 2)
     {
-        std::cerr
-            << "Usage: yatt <model> [prompt]\n";
-
+        std::cerr << "Usage: yatt <model> [prompt]\n";
         return 1;
     }
 
@@ -253,28 +77,138 @@ int main(int argc, char** argv)
     if (argc >= 3)
         prompt = argv[2];
 
+    using Clock = std::chrono::steady_clock;
+
+    // --------------------------------------------------------
+    // Load model
+    // --------------------------------------------------------
+
     Model model;
+
+    auto load_start = Clock::now();
 
     if (!load_model(model_path, model))
         return 1;
 
+    auto load_end = Clock::now();
+
+    // --------------------------------------------------------
+    // Tokenizer
+    // --------------------------------------------------------
+
     Tokenizer tokenizer(model);
+
+    auto tokenize_start = Clock::now();
 
     std::vector<uint32_t> prompt_tokens =
         tokenizer.encode(prompt);
+
+    auto tokenize_end = Clock::now();
+
+    // --------------------------------------------------------
+    // Generation
+    // --------------------------------------------------------
+
+    constexpr uint32_t max_new_tokens = 100;
+    constexpr float temperature = 0.8f;
+
+    auto generation_start = Clock::now();
 
     std::vector<uint32_t> generated =
         generate(
             model,
             prompt_tokens,
-            100,
-            0.8f
+            max_new_tokens,
+            temperature
         );
+
+    auto generation_end = Clock::now();
+    
+    const size_t rss_kb = get_current_rss_kb();
+
+    // --------------------------------------------------------
+    // Decode
+    // --------------------------------------------------------
 
     std::string output =
         tokenizer.decode(generated);
 
+    // --------------------------------------------------------
+    // Timing
+    // --------------------------------------------------------
+
+    const double load_ms =
+        std::chrono::duration<double, std::milli>(
+            load_end - load_start
+        ).count();
+
+    const double tokenize_ms =
+        std::chrono::duration<double, std::milli>(
+            tokenize_end - tokenize_start
+        ).count();
+
+    const double generation_ms =
+        std::chrono::duration<double, std::milli>(
+            generation_end - generation_start
+        ).count();
+
+    const uint32_t generated_tokens =
+        static_cast<uint32_t>(
+            generated.size() - prompt_tokens.size()
+        );
+
+    const double total_ms =
+        load_ms + tokenize_ms + generation_ms;
+
+    const double ms_per_token =
+        generated_tokens > 0
+            ? generation_ms / generated_tokens
+            : 0.0;
+
+    const double tokens_per_second =
+        generation_ms > 0.0
+            ? generated_tokens / (generation_ms / 1000.0)
+            : 0.0;
+
+    // --------------------------------------------------------
+    // Output
+    // --------------------------------------------------------
+
+    std::cout << "\n";
+    std::cout << "========================================\n";
+    std::cout << "YATT Baseline Benchmark\n";
+    std::cout << "========================================\n";
+
+    std::cout << "Model:              " << model_path << "\n";
+    std::cout << "Prompt:             " << prompt << "\n";
+    std::cout << "Prompt tokens:      " << prompt_tokens.size() << "\n";
+    std::cout << "Generated tokens:   " << generated_tokens << "\n";
+    std::cout << "Context length:     " << model.context_length << "\n";
+    std::cout << "Embed dimension:    " << model.embed_dim << "\n";
+    std::cout << "FFN dimension:      " << model.ffn_dim << "\n";
+    std::cout << "Attention heads:    " << model.num_heads << "\n";
+
+    std::cout << std::fixed << std::setprecision(3);
+
+    std::cout << "\nTiming:\n";
+    std::cout << "  Model load:       " << load_ms << " ms\n";
+    std::cout << "  Tokenization:     " << tokenize_ms << " ms\n";
+    std::cout << "  Generation:       " << generation_ms << " ms\n";
+    std::cout << "  Total:            " << total_ms << " ms\n";
+
+    std::cout << "\nGeneration:\n";
+    std::cout << "  Avg latency:      " << ms_per_token << " ms/token\n";
+    std::cout << "  Throughput:       " << tokens_per_second << " tokens/sec\n";
+
+    std::cout << "\nMemory:\n";
+    std::cout << "  Process RSS:      "
+            << rss_kb / 1024.0
+            << " MB\n";
+
+    std::cout << "\nOutput:\n";
     std::cout << output << "\n";
+
+    std::cout << "========================================\n";
 
     return 0;
 }
