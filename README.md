@@ -56,33 +56,35 @@ Follow build.md for build instructions
 ### ARMv7 Performance Baseline
 
 ```text
-YATT ARMv7 Baseline
--------------------
-Target:          BeagleBone Black
-CPU:             Cortex-A8 @ 1 GHz
-Architecture:    ARMv7 / ARMHF
-Compiler:        GCC 7.3.0
-Precision:       FP32
-Context:         64
-Embed:           64
-FFN:             256
-Heads:           4
-Parameters:      62,593
+========================================
+YATT Baseline Benchmark
+========================================
+Model:              yatt_model.bin
+Prompt:             First Citizen:
+Prompt tokens:      14
+Generated tokens:   100
+Context length:     64
+Embed dimension:    64
+FFN dimension:      256
+Attention heads:    4
 
-Model size:      ~245 KB
-RSS:             2.34 MB
+Timing:
+  Model load:       2.974 ms
+  Tokenization:     0.004 ms
+  Generation:       10144.472 ms
+  Total:            10147.450 ms
 
 Generation:
-100 tokens
-10.144 s total
-101.445 ms/token
-9.858 tokens/sec
+  Avg latency:      101.445 ms/token
+  Throughput:       9.858 tokens/sec
 
-Optimizations:
-KV cache:        No
-NEON:            No
-INT8:            No
-Threading:       No
+Memory:
+  Process RSS:      2.340 MB
+
+Output:
+First Citizen:
+A Forir for main ond danathous and how athe ong holt that the of shen theerert suld for sitrald ry
+========================================
 ```
 
 ### x86 Performance Baseline
