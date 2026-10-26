@@ -14,6 +14,13 @@ add_executable(
     src/generator.cpp
 )
 
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+    target_compile_options(yatt_loader PRIVATE
+        -mfpu=neon
+        -mfloat-abi=hard
+    )
+endif()
+
 target_include_directories(
     yatt_loader
     PRIVATE

@@ -1,3 +1,7 @@
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
+
 #include "inference.h"
 
 #include <stdexcept>
@@ -127,12 +131,37 @@ std::vector<float> linear(
         {
             float sum = bias.data[o];
 
+            #ifdef __ARM_NEON
+            float32x4_t acc = vdupq_n_f32(0.0f);
+
+            uint32_t i = 0;
+
+            for (; i + 3 < input_dim; i += 4)
+            {
+                float32x4_t x = vld1q_f32(&input[t * input_dim + i]);
+                float32x4_t w = vld1q_f32(&weight.data[o * input_dim + i]);
+
+                acc = vmlaq_f32(acc, x, w);
+            }
+
+            float tmp[4];
+            vst1q_f32(tmp, acc);
+
+            sum += tmp[0] + tmp[1] + tmp[2] + tmp[3];
+
+            for (; i < input_dim; ++i)
+            {
+                sum += input[t * input_dim + i] *
+                    weight.data[o * input_dim + i];
+            }
+            #else
             for (uint32_t i = 0; i < input_dim; ++i)
             {
                 sum +=
                     input[t * input_dim + i] *
                     weight.data[o * input_dim + i];
             }
+            #endif
 
             output[t * output_dim + o] = sum;
         }

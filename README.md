@@ -121,3 +121,40 @@ Do and dome, Gowas why thoull the youche
 I theverowe, asconce thar herut wis noown now, dir nor wer
 ========================================
 ```
+
+### ARMv7 with NEON Performance Baseline
+
+```text
+========================================
+YATT Baseline Benchmark
+========================================
+Model:              yatt_model.bin
+Prompt:             First Citizen:
+Prompt tokens:      14
+Generated tokens:   100
+Context length:     64
+Embed dimension:    64
+FFN dimension:      256
+Attention heads:    4
+
+Timing:
+  Model load:       3.305 ms
+  Tokenization:     0.004 ms
+  Generation:       3178.419 ms
+  Total:            3181.727 ms
+
+Generation:
+  Avg latency:      31.784 ms/token
+  Throughput:       31.462 tokens/sec
+
+Memory:
+  Process RSS:      2.438 MB
+
+Output:
+First Citizen:
+Whe ke herest,
+O, se ithe freste consthad hat Mif, inermt
+Ther foun yousy be tor; s,
+And cond hast
+========================================
+```
