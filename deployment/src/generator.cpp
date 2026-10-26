@@ -77,53 +77,99 @@ std::vector<uint32_t> generate(
 
     if (prompt.size() > model.context_length)
         throw std::runtime_error(
-            "Prompt exceeds model context length"
-        );
+            "Prompt exceeds model context length");
 
     std::vector<uint32_t> tokens = prompt;
 
     tokens.reserve(prompt.size() + max_new_tokens);
 
-    for (uint32_t step = 0; step < max_new_tokens; ++step)
-    {
-        size_t context_start = 0;
+    // ------------------------------------------------------------
+    // Initialize KV cache
+    // ------------------------------------------------------------
 
-        if (tokens.size() > model.context_length)
+    KVCache cache;
+
+    init_kv_cache(
+        cache,
+        model.context_length,
+        model.num_heads,
+        model.embed_dim / model.num_heads);
+
+    // ------------------------------------------------------------
+    // Prefill cache with prompt
+    // ------------------------------------------------------------
+
+    prefill_kv_cache(
+        model,
+        prompt,
+        cache);
+
+    // ------------------------------------------------------------
+    // Get logits for the final prompt token.
+    //
+    // We intentionally use the existing full forward() here.
+    // This gives us an exact reference for the first generated
+    // token while the KV cache is being initialized.
+    // ------------------------------------------------------------
+
+    std::vector<float> logits =
+        forward(model, prompt);
+
+    size_t last_offset =
+        (prompt.size() - 1) * model.vocab_size;
+
+    std::vector<float> last_logits(
+        logits.begin() + last_offset,
+        logits.begin() + last_offset + model.vocab_size);
+
+    uint32_t next_token =
+        sample_token(
+            last_logits,
+            temperature);
+
+    tokens.push_back(next_token);
+
+    // ------------------------------------------------------------
+    // Decode remaining tokens using KV cache
+    // ------------------------------------------------------------
+
+    for (uint32_t step = 1;
+         step < max_new_tokens;
+         ++step)
+    {
+        // If the cache is full, rebuild it from the current
+        // sliding context window.
+        if (cache.sequence_length >= model.context_length)
         {
-            context_start =
+            const size_t context_start =
                 tokens.size() - model.context_length;
+
+            std::vector<uint32_t> context(
+                tokens.begin() + context_start,
+                tokens.end());
+
+            prefill_kv_cache(
+                model,
+                context,
+                cache);
         }
 
-        std::vector<uint32_t> context(
-            tokens.begin() + context_start,
-            tokens.end()
-        );
+        // Run exactly one new token through the model.
+        logits =
+            forward_cached(
+                model,
+                cache,
+                next_token);
 
-        std::vector<float> logits =
-            forward(model, context);
+        // forward_cached() returns logits for the new token.
+        last_logits = std::move(logits);
 
-        size_t last_offset =
-            (context.size() - 1) * model.vocab_size;
-
-        // Extract logits for the last token
-        std::vector<float> last_logits(
-            logits.begin() + last_offset,
-            logits.begin() + last_offset + model.vocab_size
-        );
-
-        uint32_t next_token =
+        next_token =
             sample_token(
                 last_logits,
-                temperature
-            );
+                temperature);
 
         tokens.push_back(next_token);
-
-        // std::cout << "step "
-        //           << step
-        //           << ": token="
-        //           << next_token
-        //           << '\n';
     }
 
     return tokens;

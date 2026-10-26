@@ -9,6 +9,23 @@
 #include <algorithm>
 #include <limits>
 
+namespace
+{
+
+size_t kv_cache_index(
+    const KVCache& cache,
+    uint32_t head,
+    uint32_t position,
+    uint32_t dimension)
+{
+    return
+        (static_cast<size_t>(head) * cache.max_length + position)
+        * cache.head_dim
+        + dimension;
+}
+
+}
+
 const Tensor& find_tensor(const Model& model, const std::string& name)
 {
     for (const Tensor& tensor : model.tensors)
@@ -644,4 +661,417 @@ std::vector<float> forward(
         );
 
     return output_logits(model, X);
+}
+
+void KVCache::reset()
+{
+    sequence_length = 0;
+
+    std::fill(keys.begin(), keys.end(), 0.0f);
+    std::fill(values.begin(), values.end(), 0.0f);
+}
+
+void init_kv_cache(
+    KVCache& cache,
+    uint32_t max_length,
+    uint32_t num_heads,
+    uint32_t head_dim)
+{
+    cache.max_length = max_length;
+    cache.num_heads = num_heads;
+    cache.head_dim = head_dim;
+    cache.sequence_length = 0;
+
+    const size_t cache_size =
+        static_cast<size_t>(max_length) *
+        num_heads *
+        head_dim;
+
+    cache.keys.resize(cache_size);
+    cache.values.resize(cache_size);
+}
+
+void prefill_kv_cache(
+    const Model& model,
+    const std::vector<uint32_t>& token_ids,
+    KVCache& cache)
+{
+    const uint32_t T =
+        static_cast<uint32_t>(token_ids.size());
+
+    if (T > cache.max_length)
+    {
+        throw std::runtime_error(
+            "KV cache prefill exceeds maximum length");
+    }
+
+    cache.reset();
+
+    if (T == 0)
+    {
+        return;
+    }
+
+    const uint32_t C = model.embed_dim;
+
+    // Build the same embeddings used by the normal forward path.
+    const std::vector<float> embeddings =
+        build_embeddings(model, token_ids);
+
+    // LN1 produces the input to Q/K/V projections.
+    const std::vector<float> normalized =
+        layer_norm(
+            embeddings,
+            find_tensor(model, "ln1.weight"),
+            find_tensor(model, "ln1.bias"),
+            T,
+            C);
+
+    const Tensor& k_weight =
+        find_tensor(model, "k_proj.weight");
+
+    const Tensor& k_bias =
+        find_tensor(model, "k_proj.bias");
+
+    const Tensor& v_weight =
+        find_tensor(model, "v_proj.weight");
+
+    const Tensor& v_bias =
+        find_tensor(model, "v_proj.bias");
+
+    const std::vector<float> keys =
+        linear(
+            normalized,
+            k_weight,
+            k_bias,
+            T,
+            C,
+            C);
+
+    const std::vector<float> values =
+        linear(
+            normalized,
+            v_weight,
+            v_bias,
+            T,
+            C,
+            C);
+
+    const uint32_t head_dim = cache.head_dim;
+
+    for (uint32_t position = 0; position < T; ++position)
+    {
+        for (uint32_t head = 0;
+             head < cache.num_heads;
+             ++head)
+        {
+            for (uint32_t d = 0;
+                 d < head_dim;
+                 ++d)
+            {
+                const uint32_t channel =
+                    head * head_dim + d;
+
+                cache.keys[
+                    kv_cache_index(
+                        cache,
+                        head,
+                        position,
+                        d)] =
+                    keys[
+                        static_cast<size_t>(position) * C
+                        + channel];
+
+                cache.values[
+                    kv_cache_index(
+                        cache,
+                        head,
+                        position,
+                        d)] =
+                    values[
+                        static_cast<size_t>(position) * C
+                        + channel];
+            }
+        }
+    }
+
+    cache.sequence_length = T;
+}
+
+namespace
+{
+
+std::vector<float> cached_attention(
+    const Model& model,
+    const std::vector<float>& query,
+    const KVCache& cache)
+{
+    const uint32_t C = model.embed_dim;
+    const uint32_t H = cache.num_heads;
+    const uint32_t D = cache.head_dim;
+    const uint32_t T = cache.sequence_length;
+
+    if (T == 0)
+    {
+        throw std::runtime_error(
+            "Cannot run cached attention with empty KV cache");
+    }
+
+    std::vector<float> attention_output(C, 0.0f);
+
+    const float scale =
+        1.0f / std::sqrt(static_cast<float>(D));
+
+    std::vector<float> scores(T);
+    std::vector<float> weights(T);
+
+    for (uint32_t head = 0; head < H; ++head)
+    {
+        // ------------------------------------------------------------
+        // Q · K
+        // ------------------------------------------------------------
+
+        for (uint32_t position = 0;
+             position < T;
+             ++position)
+        {
+            float score = 0.0f;
+
+            for (uint32_t d = 0; d < D; ++d)
+            {
+                const uint32_t channel =
+                    head * D + d;
+
+                score +=
+                    query[channel] *
+                    cache.keys[
+                        kv_cache_index(
+                            cache,
+                            head,
+                            position,
+                            d)];
+            }
+
+            scores[position] = score * scale;
+        }
+
+        // ------------------------------------------------------------
+        // Softmax
+        // ------------------------------------------------------------
+
+        float max_score =
+            -std::numeric_limits<float>::infinity();
+
+        for (uint32_t position = 0;
+             position < T;
+             ++position)
+        {
+            max_score =
+                std::max(max_score, scores[position]);
+        }
+
+        float sum_exp = 0.0f;
+
+        for (uint32_t position = 0;
+             position < T;
+             ++position)
+        {
+            weights[position] =
+                std::exp(scores[position] - max_score);
+
+            sum_exp += weights[position];
+        }
+
+        const float inv_sum =
+            1.0f / sum_exp;
+
+        for (uint32_t position = 0;
+             position < T;
+             ++position)
+        {
+            weights[position] *= inv_sum;
+        }
+
+        // ------------------------------------------------------------
+        // Attention weights · V
+        // ------------------------------------------------------------
+
+        for (uint32_t d = 0; d < D; ++d)
+        {
+            float value = 0.0f;
+
+            for (uint32_t position = 0;
+                 position < T;
+                 ++position)
+            {
+                value +=
+                    weights[position] *
+                    cache.values[
+                        kv_cache_index(
+                            cache,
+                            head,
+                            position,
+                            d)];
+            }
+
+            attention_output[
+                head * D + d] = value;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Output projection
+    // ------------------------------------------------------------
+
+    return linear(
+        attention_output,
+        find_tensor(model, "attention_proj.weight"),
+        find_tensor(model, "attention_proj.bias"),
+        1,
+        C,
+        C);
+}
+
+}
+
+std::vector<float> forward_cached(
+    const Model& model,
+    KVCache& cache,
+    uint32_t token_id)
+{
+    if (cache.sequence_length >= cache.max_length)
+    {
+        throw std::runtime_error(
+            "KV cache is full");
+    }
+
+    const uint32_t C = model.embed_dim;
+    const uint32_t position = cache.sequence_length;
+
+    // ------------------------------------------------------------
+    // Token + positional embedding
+    // ------------------------------------------------------------
+
+    const Tensor& token_embedding =
+        find_tensor(model, "token_embedding.weight");
+
+    const Tensor& position_embedding =
+        find_tensor(model, "position_embedding.weight");
+
+    std::vector<float> embedding(C);
+
+    for (uint32_t d = 0; d < C; ++d)
+    {
+        embedding[d] =
+            token_embedding.data[
+                static_cast<size_t>(token_id) * C + d]
+            +
+            position_embedding.data[
+                static_cast<size_t>(position) * C + d];
+    }
+
+    // ------------------------------------------------------------
+    // LN1
+    // ------------------------------------------------------------
+
+    const std::vector<float> normalized =
+        layer_norm(
+            embedding,
+            find_tensor(model, "ln1.weight"),
+            find_tensor(model, "ln1.bias"),
+            1,
+            C);
+
+    // ------------------------------------------------------------
+    // Q/K/V
+    // ------------------------------------------------------------
+
+    const std::vector<float> query =
+        linear(
+            normalized,
+            find_tensor(model, "q_proj.weight"),
+            find_tensor(model, "q_proj.bias"),
+            1,
+            C,
+            C);
+
+    const std::vector<float> key =
+        linear(
+            normalized,
+            find_tensor(model, "k_proj.weight"),
+            find_tensor(model, "k_proj.bias"),
+            1,
+            C,
+            C);
+
+    const std::vector<float> value =
+        linear(
+            normalized,
+            find_tensor(model, "v_proj.weight"),
+            find_tensor(model, "v_proj.bias"),
+            1,
+            C,
+            C);
+
+    // ------------------------------------------------------------
+    // Append K/V to cache
+    // ------------------------------------------------------------
+
+    const uint32_t H = cache.num_heads;
+    const uint32_t D = cache.head_dim;
+
+    for (uint32_t head = 0; head < H; ++head)
+    {
+        for (uint32_t d = 0; d < D; ++d)
+        {
+            const uint32_t channel =
+                head * D + d;
+
+            cache.keys[
+                kv_cache_index(
+                    cache,
+                    head,
+                    position,
+                    d)] =
+                key[channel];
+
+            cache.values[
+                kv_cache_index(
+                    cache,
+                    head,
+                    position,
+                    d)] =
+                value[channel];
+        }
+    }
+
+    cache.sequence_length++;
+
+    // ------------------------------------------------------------
+    // Cached attention
+    // ------------------------------------------------------------
+
+    const std::vector<float> attention_output =
+        cached_attention(
+            model,
+            query,
+            cache);
+
+    // ------------------------------------------------------------
+    // Transformer block tail
+    // ------------------------------------------------------------
+
+    const std::vector<float> block_output =
+        transformer_block_tail(
+            model,
+            embedding,
+            attention_output);
+
+    // ------------------------------------------------------------
+    // Final logits
+    // ------------------------------------------------------------
+
+    return output_logits(
+        model,
+        block_output);
 }

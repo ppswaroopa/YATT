@@ -56,3 +56,32 @@ std::vector<float> forward(
     const Model& model,
     const std::vector<uint32_t>& token_ids
 );
+
+struct KVCache
+{
+    uint32_t sequence_length = 0;
+    uint32_t max_length = 0;
+    uint32_t num_heads = 0;
+    uint32_t head_dim = 0;
+
+    std::vector<float> keys;
+    std::vector<float> values;
+
+    void reset();
+};
+
+void init_kv_cache(
+    KVCache& cache,
+    uint32_t max_length,
+    uint32_t num_heads,
+    uint32_t head_dim);
+
+void prefill_kv_cache(
+    const Model& model,
+    const std::vector<uint32_t>& token_ids,
+    KVCache& cache);
+
+std::vector<float> forward_cached(
+    const Model& model,
+    KVCache& cache,
+    uint32_t token_id);
